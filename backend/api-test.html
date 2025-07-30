@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>挖矿游戏 API 测试工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-right: 1px solid #e9ecef;
+        }
+
+        .api-section {
+            margin-bottom: 20px;
+        }
+
+        .api-section h3 {
+            color: #495057;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 5px;
+        }
+
+        .api-button {
+            display: block;
+            width: 100%;
+            padding: 10px 15px;
+            margin-bottom: 8px;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .api-button:hover {
+            background: #007bff;
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .api-button.active {
+            background: #007bff;
+            color: white;
+        }
+
+        .content-area {
+            padding: 30px;
+        }
+
+        .api-form {
+            display: none;
+        }
+
+        .api-form.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+
+        .form-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40,167,69,0.3);
+        }
+
+        .response-area {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+
+        .response-area h4 {
+            margin-bottom: 15px;
+            color: #495057;
+        }
+
+        .response-content {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .auth-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            z-index: 1000;
+        }
+
+        .auth-status.logged-in {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .auth-status.logged-out {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        .success {
+            color: #155724;
+            background: #d4edda;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-status" id="authStatus">未登录</div>
+    
+    <div class="container">
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="api-section">
+                    <h3>🔐 用户认证</h3>
+                    <button class="api-button" onclick="showForm('register')">用户注册</button>
+                    <button class="api-button" onclick="showForm('login')">用户登录</button>
+                    <button class="api-button" onclick="showForm('logout')">用户登出</button>
+                    <button class="api-button" onclick="showForm('profile')">获取资料</button>
+                    <button class="api-button" onclick="showForm('changePassword')">修改密码</button>
+                </div>
+                
+                <div class="api-section">
+                    <h3>🎮 游戏功能</h3>
+                    <button class="api-button" onclick="showForm('mining')">执行挖矿</button>
+                    <button class="api-button" onclick="showForm('stats')">玩家统计</button>
+                    <button class="api-button" onclick="showForm('scenes')">场景列表</button>
+                    <button class="api-button" onclick="showForm('leaderboard')">排行榜</button>
+                    <button class="api-button" onclick="showForm('history')">挖矿历史</button>
+                    <button class="api-button" onclick="showForm('recoverEnergy')">恢复精力</button>
+                </div>
+                
+                <div class="api-section">
+                    <h3>🛒 商店系统</h3>
+                    <button class="api-button" onclick="showForm('shopItems')">商店物品</button>
+                    <button class="api-button" onclick="showForm('purchase')">购买物品</button>
+                    <button class="api-button" onclick="showForm('tools')">我的工具</button>
+                </div>
+                
+                <div class="api-section">
+                    <h3>⚙️ 离线挖矿</h3>
+                    <button class="api-button" onclick="showForm('startOffline')">开始离线挖矿</button>
+                    <button class="api-button" onclick="showForm('stopOffline')">停止离线挖矿</button>
+                    <button class="api-button" onclick="showForm('offlineInfo')">离线挖矿信息</button>
+                </div>
+            </div>
+            
+            <div class="content-area">
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>请求处理中...</p>
+                </div>
+                
+                <!-- 用户注册 -->
+                <div class="api-form" id="register">
+                    <h2>用户注册</h2>
+                    <form onsubmit="callAPI(event, 'POST', '/api/auth/register')">
+                        <div class="form-group">
+                            <label>用户名:</label>
+                            <input type="text" name="username" required placeholder="请输入用户名">
+                        </div>
+                        <div class="form-group">
+                            <label>邮箱:</label>
+                            <input type="email" name="email" required placeholder="请输入邮箱">
+                        </div>
+                        <div class="form-group">
+                            <label>密码:</label>
+                            <input type="password" name="password" required placeholder="请输入密码">
+                        </div>
+                        <button type="submit" class="submit-btn">注册</button>
+                    </form>
+                </div>
+                
+                <!-- 用户登录 -->
+                <div class="api-form" id="login">
+                    <h2>用户登录</h2>
+                    <form onsubmit="callAPI(event, 'POST', '/api/auth/login')">
+                        <div class="form-group">
+                            <label>用户名或邮箱:</label>
+                            <input type="text" name="username" required placeholder="请输入用户名或邮箱">
+                        </div>
+                        <div class="form-group">
+                            <label>密码:</label>
+                            <input type="password" name="password" required placeholder="请输入密码">
+                        </div>
+                        <button type="submit" class="submit-btn">登录</button>
+                    </form>
+                </div>
+                
+                <!-- 用户登出 -->
+                <div class="api-form" id="logout">
+                    <h2>用户登出</h2>
+                    <p>点击下方按钮登出当前用户</p>
+                    <button onclick="callAPI(null, 'POST', '/api/auth/logout')" class="submit-btn">登出</button>
+                </div>
+                
+                <!-- 获取用户资料 -->
+                <div class="api-form" id="profile">
+                    <h2>获取用户资料</h2>
+                    <p>获取当前登录用户的详细信息</p>
+                    <button onclick="callAPI(null, 'GET', '/api/auth/profile')" class="submit-btn">获取资料</button>
+                </div>
+                
+                <!-- 修改密码 -->
+                <div class="api-form" id="changePassword">
+                    <h2>修改密码</h2>
+                    <form onsubmit="callAPI(event, 'PUT', '/api/auth/password')">
+                        <div class="form-group">
+                            <label>当前密码:</label>
+                            <input type="password" name="currentPassword" required placeholder="请输入当前密码">
+                        </div>
+                        <div class="form-group">
+                            <label>新密码:</label>
+                            <input type="password" name="newPassword" required placeholder="请输入新密码">
+                        </div>
+                        <button type="submit" class="submit-btn">修改密码</button>
+                    </form>
+                </div>
+                
+                <!-- 执行挖矿 -->
+                <div class="api-form" id="mining">
+                    <h2>执行挖矿</h2>
+                    <form onsubmit="callAPI(event, 'POST', '/api/game/mining')">
+                        <div class="form-group">
+                            <label>场景ID:</label>
+                            <input type="number" name="sceneId" value="1" required placeholder="请输入场景ID">
+                        </div>
+                        <button type="submit" class="submit-btn">开始挖矿</button>
+                    </form>
+                </div>
+                
+                <!-- 玩家统计 -->
+                <div class="api-form" id="stats">
+                    <h2>玩家统计信息</h2>
+                    <p>获取当前玩家的详细统计数据</p>
+                    <button onclick="callAPI(null, 'GET', '/api/game/stats')" class="submit-btn">获取统计</button>
+                </div>
+                
+                <!-- 场景列表 -->
+                <div class="api-form" id="scenes">
+                    <h2>场景列表</h2>
+                    <p>获取所有可用的挖矿场景</p>
+                    <button onclick="callAPI(null, 'GET', '/api/game/scenes')" class="submit-btn">获取场景</button>
+                </div>
+                
+                <!-- 排行榜 -->
+                <div class="api-form" id="leaderboard">
+                    <h2>排行榜</h2>
+                    <form onsubmit="callAPI(event, 'GET', '/api/game/leaderboard')">
+                        <div class="form-group">
+                            <label>排行榜类型:</label>
+                            <select name="type">
+                                <option value="level">等级排行</option>
+                                <option value="coins">金币排行</option>
+                                <option value="mining_count">挖矿次数排行</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>数量限制:</label>
+                            <input type="number" name="limit" value="10" min="1" max="100">
+                        </div>
+                        <button type="submit" class="submit-btn">获取排行榜</button>
+                    </form>
+                </div>
+                
+                <!-- 挖矿历史 -->
+                <div class="api-form" id="history">
+                    <h2>挖矿历史</h2>
+                    <form onsubmit="callAPI(event, 'GET', '/api/game/history')">
+                        <div class="form-group">
+                            <label>页码:</label>
+                            <input type="number" name="page" value="1" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>每页数量:</label>
+                            <input type="number" name="limit" value="10" min="1" max="50">
+                        </div>
+                        <button type="submit" class="submit-btn">获取历史</button>
+                    </form>
+                </div>
+                
+                <!-- 恢复精力 -->
+                <div class="api-form" id="recoverEnergy">
+                    <h2>恢复精力</h2>
+                    <p>手动恢复玩家精力值</p>
+                    <button onclick="callAPI(null, 'POST', '/api/game/energy/recover')" class="submit-btn">恢复精力</button>
+                </div>
+                
+                <!-- 商店物品 -->
+                <div class="api-form" id="shopItems">
+                    <h2>商店物品</h2>
+                    <form onsubmit="callAPI(event, 'GET', '/api/shop/items')">
+                        <div class="form-group">
+                            <label>分类:</label>
+                            <select name="category">
+                                <option value="">全部</option>
+                                <option value="tool">工具</option>
+                                <option value="luck">幸运物品</option>
+                                <option value="consumable">消耗品</option>
+                                <option value="upgrade">升级材料</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>页码:</label>
+                            <input type="number" name="page" value="1" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>每页数量:</label>
+                            <input type="number" name="limit" value="10" min="1" max="50">
+                        </div>
+                        <button type="submit" class="submit-btn">获取商店物品</button>
+                    </form>
+                </div>
+                
+                <!-- 购买物品 -->
+                <div class="api-form" id="purchase">
+                    <h2>购买物品</h2>
+                    <form onsubmit="callAPI(event, 'POST', '/api/shop/purchase')">
+                        <div class="form-group">
+                            <label>物品ID:</label>
+                            <input type="number" name="itemId" required placeholder="请输入物品ID">
+                        </div>
+                        <div class="form-group">
+                            <label>购买数量:</label>
+                            <input type="number" name="quantity" value="1" min="1">
+                        </div>
+                        <button type="submit" class="submit-btn">购买物品</button>
+                    </form>
+                </div>
+                
+                <!-- 我的工具 -->
+                <div class="api-form" id="tools">
+                    <h2>我的工具</h2>
+                    <p>获取当前玩家拥有的所有工具</p>
+                    <button onclick="callAPI(null, 'GET', '/api/shop/tools')" class="submit-btn">获取工具列表</button>
+                </div>
+                
+                <!-- 开始离线挖矿 -->
+                <div class="api-form" id="startOffline">
+                    <h2>开始离线挖矿</h2>
+                    <form onsubmit="callAPI(event, 'POST', '/api/game/offline-mining/start')">
+                        <div class="form-group">
+                            <label>场景ID:</label>
+                            <input type="number" name="sceneId" value="1" required placeholder="请输入场景ID">
+                        </div>
+                        <button type="submit" class="submit-btn">开始离线挖矿</button>
+                    </form>
+                </div>
+                
+                <!-- 停止离线挖矿 -->
+                <div class="api-form" id="stopOffline">
+                    <h2>停止离线挖矿</h2>
+                    <p>停止当前的离线挖矿并收取奖励</p>
+                    <button onclick="callAPI(null, 'POST', '/api/game/offline-mining/stop')" class="submit-btn">停止离线挖矿</button>
+                </div>
+                
+                <!-- 离线挖矿信息 -->
+                <div class="api-form" id="offlineInfo">
+                    <h2>离线挖矿信息</h2>
+                    <p>获取当前离线挖矿的状态和收益</p>
+                    <button onclick="callAPI(null, 'GET', '/api/game/offline-mining')" class="submit-btn">获取离线挖矿信息</button>
+                </div>
+                
+                <div class="response-area" id="responseArea" style="display: none;">
+                    <h4>响应结果:</h4>
+                    <div class="response-content" id="responseContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = 'http://localhost:3000';
+        let authToken = localStorage.getItem('authToken');
+        
+        // 更新认证状态显示
+        function updateAuthStatus() {
+            const authStatus = document.getElementById('authStatus');
+            if (authToken) {
+                authStatus.textContent = '已登录';
+                authStatus.className = 'auth-status logged-in';
+            } else {
+                authStatus.textContent = '未登录';
+                authStatus.className = 'auth-status logged-out';
+            }
+        }
+        
+        // 显示指定的表单
+        function showForm(formId) {
+            // 隐藏所有表单
+            const forms = document.querySelectorAll('.api-form');
+            forms.forEach(form => form.classList.remove('active'));
+            
+            // 移除所有按钮的激活状态
+            const buttons = document.querySelectorAll('.api-button');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            // 显示指定表单
+            const targetForm = document.getElementById(formId);
+            if (targetForm) {
+                targetForm.classList.add('active');
+            }
+            
+            // 激活对应按钮
+            event.target.classList.add('active');
+            
+            // 隐藏响应区域
+            document.getElementById('responseArea').style.display = 'none';
+        }
+        
+        // 调用API
+        async function callAPI(event, method, endpoint, customData = null) {
+            if (event) {
+                event.preventDefault();
+            }
+            
+            const loading = document.getElementById('loading');
+            const responseArea = document.getElementById('responseArea');
+            const responseContent = document.getElementById('responseContent');
+            
+            loading.classList.add('show');
+            responseArea.style.display = 'none';
+            
+            try {
+                let requestData = customData;
+                
+                // 如果是表单提交，收集表单数据
+                if (event && event.target.tagName === 'FORM') {
+                    const formData = new FormData(event.target);
+                    requestData = {};
+                    for (let [key, value] of formData.entries()) {
+                        requestData[key] = value;
+                    }
+                }
+                
+                // 构建请求URL（对于GET请求，将参数添加到URL中）
+                let url = API_BASE_URL + endpoint;
+                if (method === 'GET' && requestData) {
+                    const params = new URLSearchParams(requestData);
+                    url += '?' + params.toString();
+                    requestData = null;
+                }
+                
+                // 构建请求选项
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                
+                // 添加认证头
+                if (authToken) {
+                    options.headers['Authorization'] = `Bearer ${authToken}`;
+                }
+                
+                // 添加请求体（非GET请求）
+                if (requestData && method !== 'GET') {
+                    options.body = JSON.stringify(requestData);
+                }
+                
+                // 发送请求
+                const response = await fetch(url, options);
+                const data = await response.json();
+                
+                // 处理登录成功的情况
+                if (endpoint === '/api/auth/login' && response.ok && data.token) {
+                    authToken = data.token;
+                    localStorage.setItem('authToken', authToken);
+                    updateAuthStatus();
+                }
+                
+                // 处理登出的情况
+                if (endpoint === '/api/auth/logout' && response.ok) {
+                    authToken = null;
+                    localStorage.removeItem('authToken');
+                    updateAuthStatus();
+                }
+                
+                // 显示响应
+                const responseText = JSON.stringify({
+                    status: response.status,
+                    statusText: response.statusText,
+                    data: data
+                }, null, 2);
+                
+                responseContent.textContent = responseText;
+                responseArea.style.display = 'block';
+                
+                // 显示成功或错误消息
+                if (response.ok) {
+                    showMessage('请求成功！', 'success');
+                } else {
+                    showMessage(`请求失败: ${data.message || response.statusText}`, 'error');
+                }
+                
+            } catch (error) {
+                console.error('API调用错误:', error);
+                responseContent.textContent = `错误: ${error.message}`;
+                responseArea.style.display = 'block';
+                showMessage(`网络错误: ${error.message}`, 'error');
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+        
+        // 显示消息
+        function showMessage(message, type) {
+            // 移除现有的消息
+            const existingMessage = document.querySelector('.message');
+            if (existingMessage) {
+                existingMessage.remove();
+            }
+            
+            // 创建新消息
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = message;
+            
+            // 添加到响应区域
+            const responseArea = document.getElementById('responseArea');
+            responseArea.appendChild(messageDiv);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+        
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            updateAuthStatus();
+            
+            // 默认显示注册表单
+            showForm('register');
+            document.querySelector('.api-button').classList.add('active');
+        });
+    </script>
+</body>
+</html>
