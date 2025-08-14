@@ -110,6 +110,35 @@ export class ShopController {
   });
 
   /**
+   * 卸下工具
+   */
+  public static unequipTool = asyncHandler(async (req: Request, res: Response) => {
+    const toolId = parseInt(req.params.toolId);
+    const playerId = req.playerId!;
+
+    // 验证输入
+    if (!Number.isInteger(toolId)) {
+      return res.status(400).json({
+        success: false,
+        message: '工具ID必须是有效的整数',
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
+      });
+    }
+
+    const result = await ShopService.toggleToolEquip({ playerId, toolId });
+
+    if (result.success) {
+      return res.status(200).json(result);
+    } else {
+      const statusCode = result.message.includes('不存在') || result.message.includes('找不到') ? 404 : 400;
+      return res.status(statusCode).json({
+        ...result,
+        code: statusCode === 404 ? GAME_CONSTANTS.ERROR_CODES.TOOL_NOT_FOUND : GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
+      });
+    }
+  });
+
+  /**
    * @swagger
    * /api/shop/purchase:
    *   post:
@@ -222,7 +251,7 @@ export class ShopController {
       return res.status(400).json({
         success: false,
         message: '购买数量必须是大于0的整数',
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
 
@@ -389,11 +418,11 @@ export class ShopController {
       return res.status(400).json({
         success: false,
         message: '工具ID必须是有效的整数',
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
 
-    const result = await ShopService.equipTool(playerId, toolId);
+    const result = await ShopService.toggleToolEquip({ playerId, toolId });
 
     if (result.success) {
       return res.status(200).json(result);
@@ -468,11 +497,11 @@ export class ShopController {
       return res.status(400).json({
         success: false,
         message: '工具ID必须是有效的整数',
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
 
-    const result = await ShopService.repairTool(playerId, toolId);
+    const result = await ShopService.repairTool({ playerId, toolId });
 
     if (result.success) {
       return res.status(200).json(result);
@@ -480,7 +509,7 @@ export class ShopController {
       const statusCode = result.message.includes('不存在') || result.message.includes('找不到') ? 404 : 400;
       return res.status(statusCode).json({
         ...result,
-        code: statusCode === 404 ? GAME_CONFIG.ERROR_CODES.TOOL_NOT_FOUND : GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: statusCode === 404 ? GAME_CONSTANTS.ERROR_CODES.TOOL_NOT_FOUND : GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
   });
@@ -543,11 +572,11 @@ export class ShopController {
       return res.status(400).json({
         success: false,
         message: '工具ID必须是有效的整数',
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
 
-    const result = await ShopService.sellTool(playerId, toolId);
+    const result = await ShopService.sellTool({ playerId, toolId });
 
     if (result.success) {
       return res.status(200).json(result);
@@ -555,7 +584,7 @@ export class ShopController {
       const statusCode = result.message.includes('不存在') || result.message.includes('找不到') ? 404 : 400;
       return res.status(statusCode).json({
         ...result,
-        code: statusCode === 404 ? GAME_CONFIG.ERROR_CODES.TOOL_NOT_FOUND : GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: statusCode === 404 ? GAME_CONSTANTS.ERROR_CODES.TOOL_NOT_FOUND : GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
   });
@@ -661,7 +690,7 @@ export class ShopController {
   public static getRecommendations = asyncHandler(async (req: Request, res: Response) => {
     const playerId = req.playerId!;
 
-    const recommendations = await ShopService.getRecommendations(playerId);
+    const recommendations = await ShopService.getRecommendedItems(playerId);
 
     return res.status(200).json({
       success: true,

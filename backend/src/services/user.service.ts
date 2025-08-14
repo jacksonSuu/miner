@@ -1,7 +1,7 @@
-import bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User';
-import { PlayerData } from '../models/PlayerData';
+import { User } from '../models/User.model';
+import { PlayerData } from '../models/PlayerData.model';
 import redisConfig from '../config/redis.config';
 import { AuthenticationError, BusinessError, NotFoundError } from '../middleware/error.middleware';
 import { Op } from 'sequelize';
@@ -84,8 +84,7 @@ class UserService {
     const user = await User.create({
       username,
       email,
-      password: hashedPassword,
-      role: 'player'
+      password: hashedPassword
     });
 
     // 创建玩家数据
@@ -93,14 +92,13 @@ class UserService {
       user_id: user.id,
       level: 1,
       experience: 0,
-      coins: 100, // 初始金币
-      energy: 100,
-      max_energy: 100,
-      current_scene_id: 1 // 默认场景
+      coins: 100,
+      current_energy: 100,
+      max_energy: 100
     });
 
     // 生成令牌
-    const { token, refreshToken } = this.generateTokens(user.id, user.role);
+    const { token, refreshToken } = this.generateTokens(user.id, 'player');
 
     // 存储刷新令牌到Redis
     await this.storeRefreshToken(user.id, refreshToken);
@@ -110,7 +108,7 @@ class UserService {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role,
+        role: 'player',
         created_at: user.created_at
       },
       token,
@@ -120,7 +118,7 @@ class UserService {
         level: playerData.level,
         experience: playerData.experience,
         coins: playerData.coins,
-        energy: playerData.energy,
+        energy: playerData.current_energy,
         max_energy: playerData.max_energy
       }
     };
@@ -144,7 +142,7 @@ class UserService {
         model: PlayerData,
         as: 'playerData'
       }]
-    });
+    }) as User & { playerData?: PlayerData };
 
     if (!user) {
       throw new AuthenticationError('用户名或密码错误');
@@ -157,19 +155,15 @@ class UserService {
     }
 
     // 检查账户状态
-    if (user.status === 'banned') {
-      throw new AuthenticationError('账户已被封禁');
-    }
-
-    if (user.status === 'inactive') {
+    if (!user.is_active) {
       throw new AuthenticationError('账户未激活');
     }
 
     // 更新最后登录时间
-    await user.update({ last_login_at: new Date() });
+    await user.update({ last_login: new Date() });
 
     // 生成令牌
-    const { token, refreshToken } = this.generateTokens(user.id, user.role);
+    const { token, refreshToken } = this.generateTokens(user.id, 'player');
 
     // 存储刷新令牌到Redis
     await this.storeRefreshToken(user.id, refreshToken);
@@ -182,7 +176,7 @@ class UserService {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role,
+        role: 'player',
         created_at: user.created_at
       },
       token,
@@ -196,7 +190,7 @@ class UserService {
         level: user.playerData.level,
         experience: user.playerData.experience,
         coins: user.playerData.coins,
-        energy: user.playerData.energy,
+        energy: user.playerData.current_energy,
         max_energy: user.playerData.max_energy
       };
     }
@@ -233,13 +227,18 @@ class UserService {
       }
 
       // 获取用户信息
-      const user = await User.findByPk(userId);
+      const user = await User.findByPk(userId, {
+        include: [{
+          model: PlayerData,
+          as: 'playerData'
+        }]
+      }) as User & { playerData?: PlayerData };
       if (!user) {
         throw new NotFoundError('用户不存在');
       }
 
       // 生成新的令牌
-      const tokens = this.generateTokens(user.id, user.role);
+      const tokens = this.generateTokens(user.id, 'player');
 
       // 更新Redis中的刷新令牌
       await this.storeRefreshToken(user.id, tokens.refreshToken);
@@ -319,10 +318,13 @@ class UserService {
     let admins = 0;
 
     for (const userId of onlineUsers) {
-      const userRole = await redisConfig.get(`user_role:${userId}`);
-      if (userRole === 'admin') {
-        admins++;
-      } else {
+      const user = await User.findByPk(userId, {
+        include: [{
+          model: PlayerData,
+          as: 'playerData'
+        }]
+      }) as User & { playerData?: PlayerData };
+      if (user && user.playerData) {
         players++;
       }
     }
@@ -342,11 +344,11 @@ class UserService {
 
     const token = jwt.sign(payload, this.JWT_SECRET, {
       expiresIn: this.JWT_EXPIRES_IN
-    });
+    } as jwt.SignOptions);
 
     const refreshToken = jwt.sign(payload, this.JWT_REFRESH_SECRET, {
       expiresIn: this.JWT_REFRESH_EXPIRES_IN
-    });
+    } as jwt.SignOptions);
 
     return { token, refreshToken };
   }

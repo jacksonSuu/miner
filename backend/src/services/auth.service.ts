@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { User, PlayerData } from '../models';
 import { GAME_CONFIG } from '../config/game.config';
-import { RedisClient } from '../config/redis.config';
+import { redisClient } from '../config/redis.config';
 
 // 认证服务接口
 export interface AuthTokenPayload {
@@ -179,7 +179,7 @@ export class AuthService {
 
       // 将令牌存储到Redis（用于令牌管理）
       const tokenKey = `${this.TOKEN_PREFIX}${user.id}`;
-      await RedisClient.set(tokenKey, token, this.getExpirationSeconds(expiresIn));
+      await redisClient.set(tokenKey, token, { EX: this.getExpirationSeconds(expiresIn) });
 
       // 更新最后登录时间
       await user.updateLastLogin();
@@ -222,7 +222,7 @@ export class AuthService {
     try {
       // 从Redis中删除令牌
       const tokenKey = `${this.TOKEN_PREFIX}${userId}`;
-      await RedisClient.del(tokenKey);
+      await redisClient.del(tokenKey);
 
       return {
         success: true,
@@ -251,7 +251,7 @@ export class AuthService {
       
       // 检查Redis中是否存在该令牌
       const tokenKey = `${this.TOKEN_PREFIX}${payload.userId}`;
-      const storedToken = await RedisClient.get(tokenKey);
+      const storedToken = await redisClient.get(tokenKey);
       
       if (!storedToken || storedToken !== token) {
         return {
@@ -319,7 +319,7 @@ export class AuthService {
       
       // 更新Redis中的令牌
       const tokenKey = `${this.TOKEN_PREFIX}${verification.payload.userId}`;
-      await RedisClient.set(tokenKey, newToken, this.getExpirationSeconds(this.JWT_EXPIRES_IN));
+      await redisClient.set(tokenKey, newToken, { EX: this.getExpirationSeconds(this.JWT_EXPIRES_IN) });
 
       return {
         success: true,
@@ -378,7 +378,7 @@ export class AuthService {
 
       // 清除所有令牌（强制重新登录）
       const tokenKey = `${this.TOKEN_PREFIX}${data.userId}`;
-      await RedisClient.del(tokenKey);
+      await redisClient.del(tokenKey);
 
       return {
         success: true,
@@ -399,7 +399,7 @@ export class AuthService {
   private static generateToken(payload: AuthTokenPayload, expiresIn?: string): string {
     return jwt.sign(payload, this.JWT_SECRET, {
       expiresIn: expiresIn || this.JWT_EXPIRES_IN
-    });
+    } as jwt.SignOptions);
   }
 
   /**

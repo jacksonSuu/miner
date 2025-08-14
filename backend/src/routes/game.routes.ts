@@ -9,9 +9,9 @@ import {
   requestLogger
 } from '../middleware/auth.middleware';
 import { 
-  validateBody, 
-  validateQuery,
-  validateParams 
+  validateRequestBody,
+  validateQueryParams,
+  validatePathParams 
 } from '../middleware/error.middleware';
 
 const router = Router();
@@ -265,9 +265,7 @@ router.use(requireAuth);
 // 执行挖矿
 router.post('/mine', 
   miningRateLimit,
-  validateBody({
-    sceneId: { type: 'integer', required: true, minimum: 1 }
-  }),
+  validateRequestBody(['sceneId']),
   checkEnergy(10), // 最少需要10点精力
   GameController.performMining
 );
@@ -284,9 +282,7 @@ router.get('/scenes',
 
 // 开始离线挖矿
 router.post('/offline-mining/start', 
-  validateBody({
-    sceneId: { type: 'integer', required: true, minimum: 1 }
-  }),
+  validateRequestBody(['sceneId']),
   checkLevel(5), // 需要5级才能离线挖矿
   checkEnergy(50), // 需要50点精力开始离线挖矿
   GameController.startOfflineMining
@@ -309,18 +305,13 @@ router.post('/energy/recover',
 
 // 获取挖矿排行榜
 router.get('/leaderboard', 
-  validateQuery({
-    limit: { type: 'integer', required: false, minimum: 1, maximum: 100 }
-  }),
+  validateQueryParams([]),
   GameController.getLeaderboard
 );
 
 // 获取挖矿历史
 router.get('/mining-history', 
-  validateQuery({
-    page: { type: 'integer', required: false, minimum: 1 },
-    limit: { type: 'integer', required: false, minimum: 1, maximum: 50 }
-  }),
+  validateQueryParams([]),
   GameController.getMiningHistory
 );
 

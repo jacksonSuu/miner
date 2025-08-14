@@ -545,7 +545,7 @@ export const MiningRecordModel = (sequelize: Sequelize) => {
         },
         
         beforeUpdate: (record: MiningRecord) => {
-          record.updated_at = new Date();
+          record.setDataValue('updated_at', new Date());
         },
         
         afterCreate: async (record: MiningRecord) => {

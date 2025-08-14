@@ -104,7 +104,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
     });
   }
-  next(err);
+  return next(err);
 });
 
 app.use(express.urlencoded({ 

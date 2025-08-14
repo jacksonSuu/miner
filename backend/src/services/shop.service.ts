@@ -1,6 +1,6 @@
 import { PlayerData, ShopItem, Tool } from '../models';
 import { GAME_CONFIG } from '../config/game.config';
-import { RedisClient } from '../config/redis.config';
+import { redisClient } from '../config/redis.config';
 import { Op } from 'sequelize';
 
 // 商店服务接口
@@ -125,7 +125,7 @@ export class ShopService {
 
       // 构建查询条件
       const whereConditions: any = {
-        is_available: true
+        is_active: true
       };
 
       if (category && category !== 'all') {
@@ -149,9 +149,37 @@ export class ShopService {
 
       // 格式化商店物品
       const formattedItems: ShopItemInfo[] = shopItems.map(item => {
-        const canPurchase = item.canPlayerPurchase(player);
-        const effects = item.getEffects();
-        const rarityColor = item.getRarityColor();
+        const canPurchase = item.canPlayerPurchase(player.level, player.coins).canPurchase;
+        
+        // 解析effects字符串为对象
+        let effects = {
+          experienceBonus: 0,
+          coinsBonus: 0,
+          efficiencyBonus: 0,
+          energyRestore: 0,
+          maxEnergyIncrease: 0
+        };
+        
+        // 根据effect_type设置对应的效果值
+        switch (item.effect_type) {
+          case 'exp_bonus':
+            effects.experienceBonus = item.effect_value;
+            break;
+          case 'coin_bonus':
+            effects.coinsBonus = item.effect_value;
+            break;
+          case 'mining_speed':
+            effects.efficiencyBonus = item.effect_value;
+            break;
+          case 'energy_recovery':
+            effects.energyRestore = item.effect_value;
+            break;
+          case 'energy_max':
+            effects.maxEnergyIncrease = item.effect_value;
+            break;
+        }
+        
+        const rarityColor = GAME_CONFIG.RARITY[item.rarity.toUpperCase() as keyof typeof GAME_CONFIG.RARITY]?.color || '#ffffff';
 
         return {
           id: item.id,
@@ -167,15 +195,15 @@ export class ShopService {
             coins: item.price
           },
           canPurchase,
-          stock: item.stock || undefined,
-          isLimited: item.stock !== null && item.stock > 0
+          stock: item.max_quantity || undefined,
+          isLimited: item.max_quantity !== null && item.max_quantity > 0
         };
       });
 
       // 获取所有可用分类
       const categories = await ShopItem.findAll({
         attributes: ['category'],
-        where: { is_available: true },
+        where: { is_active: true },
         group: ['category'],
         raw: true
       }).then(results => results.map(r => r.category));
@@ -213,7 +241,7 @@ export class ShopService {
 
       // 检查购买冷却
       const cooldownKey = `${this.PURCHASE_COOLDOWN_KEY}${playerId}`;
-      const lastPurchaseTime = await RedisClient.get(cooldownKey);
+      const lastPurchaseTime = await redisClient.get(cooldownKey);
       if (lastPurchaseTime) {
         const timeSinceLastPurchase = Date.now() - parseInt(lastPurchaseTime);
         if (timeSinceLastPurchase < 1000) { // 1秒冷却
@@ -235,7 +263,7 @@ export class ShopService {
 
       // 获取商店物品
       const shopItem = await ShopItem.findByPk(itemId);
-      if (!shopItem || !shopItem.is_available) {
+      if (!shopItem || !shopItem.is_active) {
         return {
           success: false,
           message: '商品不存在或已下架'
@@ -243,7 +271,7 @@ export class ShopService {
       }
 
       // 检查购买条件
-      if (!shopItem.canPlayerPurchase(player)) {
+      if (!shopItem.canPlayerPurchase(player.level, player.coins).canPurchase) {
         if (player.level < shopItem.required_level) {
           return {
             success: false,
@@ -259,7 +287,7 @@ export class ShopService {
       }
 
       // 检查库存
-      if (shopItem.stock !== null && shopItem.stock < quantity) {
+      if (shopItem.max_quantity !== null && shopItem.max_quantity < quantity) {
         return {
           success: false,
           message: '库存不足'
@@ -273,38 +301,35 @@ export class ShopService {
       
       if (shopItem.category === 'tool') {
         // 购买工具
-        const tool = await Tool.createForPlayer({
+        const tool = await Tool.createPlayerTool({
           playerId,
+          shopItemId: shopItem.id,
           name: shopItem.name,
-          category: shopItem.category,
-          rarity: shopItem.rarity,
-          experienceBonus: shopItem.experience_bonus || 0,
-          coinsBonus: shopItem.coins_bonus || 0,
-          efficiencyBonus: shopItem.efficiency_bonus || 0,
-          maxDurability: GAME_CONFIG.TOOLS.BASE_DURABILITY,
-          purchasePrice: shopItem.price
+          effectType: shopItem.effect_type as 'mining_speed' | 'energy_recovery' | 'coin_bonus' | 'exp_bonus' | 'energy_max',
+          effectValue: shopItem.effect_value,
+          maxDurability: 100
         });
 
         purchaseResult.tool = {
           id: tool.id,
-          durability: tool.current_durability,
+          durability: tool.durability,
           isEquipped: tool.is_equipped
         };
-      } else if (shopItem.category === 'consumable') {
+      } else if (shopItem.category === 'potion') {
         // 使用消耗品
-        if (shopItem.energy_restore && shopItem.energy_restore > 0) {
+        if (shopItem.effect_type === 'energy_recovery' && shopItem.effect_value > 0) {
           // 恢复精力
           const energyRestored = Math.min(
-            shopItem.energy_restore,
+            shopItem.effect_value,
             player.max_energy - player.current_energy
           );
           await player.recoverEnergy(energyRestored);
         }
 
-        if (shopItem.max_energy_increase && shopItem.max_energy_increase > 0) {
+        if (shopItem.effect_type === 'energy_max' && shopItem.effect_value > 0) {
           // 增加最大精力
           await player.update({
-            max_energy: player.max_energy + shopItem.max_energy_increase
+            max_energy: player.max_energy + shopItem.effect_value
           });
         }
       }
@@ -313,14 +338,16 @@ export class ShopService {
       await player.spendCoins(totalCost);
 
       // 更新库存
-      if (shopItem.stock !== null) {
-        await shopItem.update({
-          stock: shopItem.stock - quantity
+      if (shopItem.max_quantity !== null) {
+        await ShopItem.update({
+          max_quantity: shopItem.max_quantity - quantity
+        }, {
+          where: { id: shopItem.id }
         });
       }
 
       // 设置购买冷却
-      await RedisClient.set(cooldownKey, Date.now().toString(), 2);
+      await redisClient.set(cooldownKey, Date.now().toString(), { EX: 2 });
 
       // 重新加载玩家数据
       await player.reload();
@@ -357,30 +384,30 @@ export class ShopService {
       const tools = await Tool.getPlayerTools(playerId);
       
       return tools.map(tool => {
-        const durabilityPercentage = (tool.current_durability / tool.max_durability) * 100;
-        const repairCost = Math.ceil(tool.purchase_price * 0.1 * (1 - durabilityPercentage / 100));
+        const durabilityPercentage = (tool.durability / tool.max_durability) * 100;
+        const repairCost = Math.ceil((tool.max_durability - tool.durability) / tool.max_durability * 100);
         
         return {
           id: tool.id,
           name: tool.name,
-          category: tool.category,
-          rarity: tool.rarity,
-          color: GAME_CONFIG.ITEM_RARITY[tool.rarity as keyof typeof GAME_CONFIG.ITEM_RARITY]?.color || '#ffffff',
+          category: 'tool',
+          rarity: 'common',
+          color: GAME_CONFIG.RARITY['COMMON']?.color || '#ffffff',
           durability: {
-            current: tool.current_durability,
+            current: tool.durability,
             max: tool.max_durability,
             percentage: Math.round(durabilityPercentage)
           },
           effects: {
-            experienceBonus: tool.experience_bonus,
-            coinsBonus: tool.coins_bonus,
-            efficiencyBonus: tool.efficiency_bonus
+            experienceBonus: tool.effect_type === 'exp_bonus' ? tool.effect_value : 0,
+            coinsBonus: tool.effect_type === 'coin_bonus' ? tool.effect_value : 0,
+            efficiencyBonus: tool.effect_type === 'mining_speed' ? tool.effect_value : 0
           },
           isEquipped: tool.is_equipped,
-          canEquip: tool.canUse(),
-          canRepair: tool.current_durability < tool.max_durability,
+          canEquip: tool.isUsable(),
+          canRepair: tool.durability < tool.max_durability,
           repairCost,
-          purchasePrice: tool.purchase_price,
+          purchasePrice: 100, // 默认购买价格
           createdAt: tool.created_at.toISOString()
         };
       });
@@ -429,7 +456,7 @@ export class ShopService {
         };
       } else {
         // 装备工具
-        if (!tool.canUse()) {
+        if (!tool.isUsable()) {
           return {
             success: false,
             message: '工具已损坏，无法装备'
@@ -489,7 +516,7 @@ export class ShopService {
         };
       }
 
-      if (tool.current_durability >= tool.max_durability) {
+      if (tool.durability >= tool.max_durability) {
         return {
           success: false,
           message: '工具无需修理'
@@ -497,8 +524,8 @@ export class ShopService {
       }
 
       // 计算修理费用
-      const durabilityPercentage = (tool.current_durability / tool.max_durability) * 100;
-      const repairCost = Math.ceil(tool.purchase_price * 0.1 * (1 - durabilityPercentage / 100));
+      const durabilityPercentage = (tool.durability / tool.max_durability) * 100;
+      const repairCost = Math.ceil(100 * 0.1 * (1 - durabilityPercentage / 100)); // 假设购买价格为100
 
       if (player.coins < repairCost) {
         return {
@@ -509,7 +536,7 @@ export class ShopService {
 
       // 执行修理
       await player.spendCoins(repairCost);
-      await tool.repair();
+      await tool.repairTool();
       await player.reload();
 
       return {
@@ -518,7 +545,7 @@ export class ShopService {
         data: {
           toolId: tool.id,
           newState: {
-            durability: tool.current_durability
+            durability: tool.durability
           },
           playerCoins: player.coins
         }
@@ -565,8 +592,8 @@ export class ShopService {
       }
 
       // 计算出售价格（购买价格的50%，根据耐久度调整）
-      const durabilityPercentage = tool.current_durability / tool.max_durability;
-      const sellPrice = Math.floor(tool.purchase_price * 0.5 * durabilityPercentage);
+      const durabilityPercentage = tool.durability / tool.max_durability;
+      const sellPrice = Math.floor(100 * 0.5 * durabilityPercentage); // 假设购买价格为100
 
       // 如果工具已装备，先卸下
       if (tool.is_equipped) {
@@ -601,14 +628,14 @@ export class ShopService {
   public static async getDailyDeals(playerId: number): Promise<ShopItemInfo[]> {
     try {
       const cacheKey = `${this.DAILY_DEALS_KEY}${new Date().toDateString()}`;
-      let dealIds = await RedisClient.get(cacheKey);
+      let dealIds = await redisClient.get(cacheKey);
       
       if (!dealIds) {
         // 生成今日特惠商品
         const allItems = await ShopItem.findAll({
           where: {
-            is_available: true,
-            category: { [Op.in]: ['tool', 'consumable'] }
+            is_active: true,
+            category: { [Op.in]: ['tool', 'potion'] }
           }
         });
 
@@ -623,7 +650,7 @@ export class ShopService {
         tomorrow.setHours(0, 0, 0, 0);
         const ttl = Math.floor((tomorrow.getTime() - Date.now()) / 1000);
         
-        await RedisClient.set(cacheKey, dealIds, ttl);
+        await redisClient.set(cacheKey, dealIds, { EX: ttl });
       }
 
       const itemIds = JSON.parse(dealIds);
@@ -636,14 +663,42 @@ export class ShopService {
       const dealItems = await ShopItem.findAll({
         where: {
           id: { [Op.in]: itemIds },
-          is_available: true
+          is_active: true
         }
       });
 
       return dealItems.map(item => {
-        const canPurchase = item.canPlayerPurchase(player);
-        const effects = item.getEffects();
-        const rarityColor = item.getRarityColor();
+        const canPurchase = item.canPlayerPurchase(player.level, player.coins).canPurchase;
+        
+        // 解析effects字符串为对象
+        let effects = {
+          experienceBonus: 0,
+          coinsBonus: 0,
+          efficiencyBonus: 0,
+          energyRestore: 0,
+          maxEnergyIncrease: 0
+        };
+        
+        // 根据effect_type设置对应的效果值
+        switch (item.effect_type) {
+          case 'exp_bonus':
+            effects.experienceBonus = item.effect_value;
+            break;
+          case 'coin_bonus':
+            effects.coinsBonus = item.effect_value;
+            break;
+          case 'mining_speed':
+            effects.efficiencyBonus = item.effect_value;
+            break;
+          case 'energy_recovery':
+            effects.energyRestore = item.effect_value;
+            break;
+          case 'energy_max':
+            effects.maxEnergyIncrease = item.effect_value;
+            break;
+        }
+        
+        const rarityColor = GAME_CONFIG.RARITY[item.rarity.toUpperCase() as keyof typeof GAME_CONFIG.RARITY]?.color || '#ffffff';
         
         // 特惠价格（原价的80%）
         const discountPrice = Math.floor(item.price * 0.8);
@@ -662,7 +717,7 @@ export class ShopService {
             coins: discountPrice
           },
           canPurchase: player.level >= item.required_level && player.coins >= discountPrice,
-          stock: item.stock || undefined,
+          stock: item.max_quantity || undefined,
           isLimited: true
         };
       });
@@ -685,9 +740,37 @@ export class ShopService {
       const recommendedItems = await ShopItem.getRecommendedItems(player.level, player.coins);
       
       return recommendedItems.map(item => {
-        const canPurchase = item.canPlayerPurchase(player);
-        const effects = item.getEffects();
-        const rarityColor = item.getRarityColor();
+        const canPurchase = item.canPlayerPurchase(player.level, player.coins).canPurchase;
+        
+        // 解析effects字符串为对象
+        let effects = {
+          experienceBonus: 0,
+          coinsBonus: 0,
+          efficiencyBonus: 0,
+          energyRestore: 0,
+          maxEnergyIncrease: 0
+        };
+        
+        // 根据effect_type设置对应的效果值
+        switch (item.effect_type) {
+          case 'exp_bonus':
+            effects.experienceBonus = item.effect_value;
+            break;
+          case 'coin_bonus':
+            effects.coinsBonus = item.effect_value;
+            break;
+          case 'mining_speed':
+            effects.efficiencyBonus = item.effect_value;
+            break;
+          case 'energy_recovery':
+            effects.energyRestore = item.effect_value;
+            break;
+          case 'energy_max':
+            effects.maxEnergyIncrease = item.effect_value;
+            break;
+        }
+        
+        const rarityColor = GAME_CONFIG.RARITY[item.rarity.toUpperCase() as keyof typeof GAME_CONFIG.RARITY]?.color || '#ffffff';
 
         return {
           id: item.id,
@@ -703,8 +786,8 @@ export class ShopService {
             coins: item.price
           },
           canPurchase,
-          stock: item.stock || undefined,
-          isLimited: item.stock !== null && item.stock > 0
+          stock: item.max_quantity || undefined,
+          isLimited: item.max_quantity !== null && item.max_quantity > 0
         };
       });
     } catch (error) {

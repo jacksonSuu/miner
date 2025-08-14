@@ -8,8 +8,8 @@ import {
   requestLogger
 } from '../middleware/auth.middleware';
 import { 
-  validateBody, 
-  validateQuery 
+  validateRequestBody, 
+  validateQueryParams 
 } from '../middleware/error.middleware';
 
 const router = Router();
@@ -187,20 +187,13 @@ router.use(authApiRateLimit);
 
 // 用户注册
 router.post('/register', 
-  validateBody({
-    username: { type: 'string', minLength: 3, maxLength: 20, required: true },
-    email: { type: 'string', format: 'email', required: true },
-    password: { type: 'string', minLength: 6, required: true }
-  }),
+  validateRequestBody(['username', 'email', 'password']),
   AuthController.register
 );
 
 // 用户登录
 router.post('/login', 
-  validateBody({
-    username: { type: 'string', required: true },
-    password: { type: 'string', required: true }
-  }),
+  validateRequestBody(['username', 'password']),
   AuthController.login
 );
 
@@ -212,19 +205,14 @@ router.post('/logout',
 
 // 刷新令牌
 router.post('/refresh', 
-  validateBody({
-    refreshToken: { type: 'string', required: true }
-  }),
+  validateRequestBody(['refreshToken']),
   AuthController.refreshToken
 );
 
 // 修改密码
 router.post('/change-password', 
   requireAuth,
-  validateBody({
-    oldPassword: { type: 'string', required: true },
-    newPassword: { type: 'string', minLength: 6, required: true }
-  }),
+  validateRequestBody(['oldPassword', 'newPassword']),
   AuthController.changePassword
 );
 
@@ -243,9 +231,7 @@ router.get('/verify',
 // 获取在线用户统计（管理员）
 router.get('/online-stats', 
   requireAuth,
-  validateQuery({
-    detailed: { type: 'boolean', required: false }
-  }),
+  validateQueryParams([]),
   AuthController.getOnlineStats
 );
 

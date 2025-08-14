@@ -574,7 +574,7 @@ export const ShopItemModel = (sequelize: Sequelize) => {
       ],
       hooks: {
         beforeUpdate: (item: ShopItem) => {
-          item.updated_at = new Date();
+          item.setDataValue('updated_at', new Date());
         },
         
         afterCreate: async (item: ShopItem) => {

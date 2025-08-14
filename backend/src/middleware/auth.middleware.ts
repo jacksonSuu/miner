@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService, AuthTokenPayload } from '../services/auth.service';
 import { GAME_CONFIG, GAME_CONSTANTS } from '../config/game.config';
-import { RedisClient } from '../config/redis.config';
+import { redisClient } from '../config/redis.config';
 
 // 扩展Request接口以包含用户信息
 declare global {
@@ -33,7 +33,7 @@ export interface RateLimitOptions {
  * JWT认证中间件
  */
 export const authenticateToken = (options: AuthMiddlewareOptions = {}) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
     try {
       const { required = true, checkPlayerData = true } = options;
       
@@ -64,7 +64,7 @@ export const authenticateToken = (options: AuthMiddlewareOptions = {}) => {
         return res.status(401).json({
           success: false,
           message: verification.message || '无效的访问令牌',
-          code: GAME_CONFIG.ERROR_CODES.UNAUTHORIZED
+          code: GAME_CONSTANTS.ERROR_CODES.UNAUTHORIZED
         });
       }
 
@@ -112,13 +112,13 @@ export const requireAuth = authenticateToken({ required: true });
 /**
  * 管理员权限中间件
  */
-export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
+export const requireAdmin = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
   try {
     if (!req.user) {
       return res.status(401).json({
         success: false,
         message: '需要登录',
-        code: GAME_CONFIG.ERROR_CODES.UNAUTHORIZED
+        code: GAME_CONSTANTS.ERROR_CODES.UNAUTHORIZED
       });
     }
 
@@ -139,7 +139,7 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
     return res.status(500).json({
       success: false,
       message: '权限检查异常',
-      code: GAME_CONFIG.ERROR_CODES.INTERNAL_ERROR
+      code: GAME_CONSTANTS.ERROR_CODES.INTERNAL_ERROR
     });
   }
 };
@@ -150,14 +150,14 @@ export const requireAdmin = async (req: Request, res: Response, next: NextFuncti
 export const rateLimit = (options: RateLimitOptions) => {
   const { windowMs, maxRequests, message = '请求过于频繁，请稍后再试', skipSuccessfulRequests = false } = options;
   
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
     try {
       // 获取客户端标识（IP地址或用户ID）
       const identifier = req.user?.userId?.toString() || req.ip || 'anonymous';
       const key = `rate_limit:${identifier}:${req.route?.path || req.path}`;
       
       // 获取当前请求计数
-      const current = await RedisClient.get(key);
+      const current = await redisClient.get(key);
       const requestCount = current ? parseInt(current) : 0;
       
       // 检查是否超过限制
@@ -173,7 +173,7 @@ export const rateLimit = (options: RateLimitOptions) => {
       // 增加请求计数
       const newCount = requestCount + 1;
       const ttl = requestCount === 0 ? Math.ceil(windowMs / 1000) : undefined;
-      await RedisClient.set(key, newCount.toString(), ttl);
+      await redisClient.set(key, newCount.toString(), { EX: ttl });
       
       // 设置响应头
       res.set({
@@ -190,7 +190,7 @@ export const rateLimit = (options: RateLimitOptions) => {
           
           // 如果是成功响应，减少计数
           if (res.statusCode >= 200 && res.statusCode < 300) {
-            RedisClient.set(key, Math.max(0, newCount - 1).toString(), ttl)
+            redisClient.set(key, Math.max(0, newCount - 1).toString(), { EX: ttl })
               .catch(err => console.error('减少速率限制计数失败:', err));
           }
           
@@ -211,8 +211,8 @@ export const rateLimit = (options: RateLimitOptions) => {
  * 游戏API速率限制
  */
 export const gameApiRateLimit = rateLimit({
-  windowMs: GAME_CONFIG.RATE_LIMIT.GAME_API.WINDOW_MS,
-  maxRequests: GAME_CONFIG.RATE_LIMIT.GAME_API.MAX_REQUESTS,
+  windowMs: GAME_CONFIG.RATE_LIMIT.WINDOW_MS,
+  maxRequests: GAME_CONFIG.RATE_LIMIT.MAX_REQUESTS,
   message: '游戏操作过于频繁，请稍后再试'
 });
 
@@ -220,8 +220,8 @@ export const gameApiRateLimit = rateLimit({
  * 认证API速率限制
  */
 export const authApiRateLimit = rateLimit({
-  windowMs: GAME_CONFIG.RATE_LIMIT.AUTH_API.WINDOW_MS,
-  maxRequests: GAME_CONFIG.RATE_LIMIT.AUTH_API.MAX_REQUESTS,
+  windowMs: GAME_CONFIG.RATE_LIMIT.WINDOW_MS,
+  maxRequests: GAME_CONFIG.RATE_LIMIT.MAX_REQUESTS,
   message: '登录尝试过于频繁，请稍后再试'
 });
 
@@ -247,7 +247,7 @@ export const shopRateLimit = rateLimit({
 /**
  * 验证玩家所有权中间件
  */
-export const validatePlayerOwnership = async (req: Request, res: Response, next: NextFunction) => {
+export const validatePlayerOwnership = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
   try {
     const playerId = req.params.playerId || req.body.playerId || req.query.playerId;
     
@@ -255,7 +255,7 @@ export const validatePlayerOwnership = async (req: Request, res: Response, next:
       return res.status(400).json({
         success: false,
         message: '缺少玩家ID参数',
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
     
@@ -264,7 +264,7 @@ export const validatePlayerOwnership = async (req: Request, res: Response, next:
       return res.status(403).json({
         success: false,
         message: '无权访问其他玩家的数据',
-        code: GAME_CONFIG.ERROR_CODES.FORBIDDEN
+        code: GAME_CONSTANTS.ERROR_CODES.FORBIDDEN
       });
     }
     
@@ -274,7 +274,7 @@ export const validatePlayerOwnership = async (req: Request, res: Response, next:
     return res.status(500).json({
       success: false,
       message: '权限验证异常',
-      code: GAME_CONFIG.ERROR_CODES.INTERNAL_ERROR
+      code: GAME_CONSTANTS.ERROR_CODES.INTERNAL_ERROR
     });
   }
 };
@@ -282,25 +282,25 @@ export const validatePlayerOwnership = async (req: Request, res: Response, next:
 /**
  * 游戏状态检查中间件
  */
-export const checkGameStatus = async (req: Request, res: Response, next: NextFunction) => {
+export const checkGameStatus = async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
   try {
     // 检查游戏是否在维护中
-    const maintenanceStatus = await RedisClient.get('game:maintenance');
+    const maintenanceStatus = await redisClient.get('game:maintenance');
     if (maintenanceStatus === 'true') {
       return res.status(503).json({
         success: false,
         message: '游戏正在维护中，请稍后再试',
-        code: GAME_CONFIG.ERROR_CODES.MAINTENANCE
+        code: GAME_CONSTANTS.ERROR_CODES.MAINTENANCE
       });
     }
     
     // 检查服务器负载
-    const serverLoad = await RedisClient.get('game:server_load');
+    const serverLoad = await redisClient.get('game:server_load');
     if (serverLoad && parseInt(serverLoad) > 90) {
       return res.status(503).json({
         success: false,
         message: '服务器负载过高，请稍后再试',
-        code: GAME_CONFIG.ERROR_CODES.SERVER_OVERLOAD
+        code: GAME_CONSTANTS.ERROR_CODES.SERVER_OVERLOAD
       });
     }
     
@@ -316,13 +316,13 @@ export const checkGameStatus = async (req: Request, res: Response, next: NextFun
  * 精力检查中间件
  */
 export const checkEnergy = (requiredEnergy: number) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
     try {
       if (!req.playerId) {
         return res.status(401).json({
           success: false,
           message: '需要登录',
-          code: GAME_CONFIG.ERROR_CODES.UNAUTHORIZED
+          code: GAME_CONSTANTS.ERROR_CODES.UNAUTHORIZED
         });
       }
       
@@ -333,7 +333,7 @@ export const checkEnergy = (requiredEnergy: number) => {
         return res.status(404).json({
           success: false,
           message: '玩家数据不存在',
-          code: GAME_CONFIG.ERROR_CODES.PLAYER_NOT_FOUND
+          code: GAME_CONSTANTS.ERROR_CODES.PLAYER_NOT_FOUND
         });
       }
       
@@ -345,7 +345,7 @@ export const checkEnergy = (requiredEnergy: number) => {
         return res.status(400).json({
           success: false,
           message: `精力不足，需要 ${requiredEnergy} 点精力`,
-          code: GAME_CONFIG.ERROR_CODES.INSUFFICIENT_ENERGY,
+          code: GAME_CONSTANTS.ERROR_CODES.INSUFFICIENT_ENERGY,
           data: {
             required: requiredEnergy,
             current: player.current_energy,
@@ -360,7 +360,7 @@ export const checkEnergy = (requiredEnergy: number) => {
       return res.status(500).json({
         success: false,
         message: '精力检查异常',
-        code: GAME_CONFIG.ERROR_CODES.INTERNAL_ERROR
+        code: GAME_CONSTANTS.ERROR_CODES.INTERNAL_ERROR
       });
     }
   };
@@ -370,13 +370,13 @@ export const checkEnergy = (requiredEnergy: number) => {
  * 等级检查中间件
  */
 export const checkLevel = (requiredLevel: number) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
     try {
       if (!req.playerId) {
         return res.status(401).json({
           success: false,
           message: '需要登录',
-          code: GAME_CONFIG.ERROR_CODES.UNAUTHORIZED
+          code: GAME_CONSTANTS.ERROR_CODES.UNAUTHORIZED
         });
       }
       
@@ -387,7 +387,7 @@ export const checkLevel = (requiredLevel: number) => {
         return res.status(404).json({
           success: false,
           message: '玩家数据不存在',
-          code: GAME_CONFIG.ERROR_CODES.PLAYER_NOT_FOUND
+          code: GAME_CONSTANTS.ERROR_CODES.PLAYER_NOT_FOUND
         });
       }
       
@@ -395,7 +395,7 @@ export const checkLevel = (requiredLevel: number) => {
         return res.status(400).json({
           success: false,
           message: `需要等级 ${requiredLevel} 才能执行此操作`,
-          code: GAME_CONFIG.ERROR_CODES.INSUFFICIENT_LEVEL,
+          code: GAME_CONSTANTS.ERROR_CODES.INSUFFICIENT_LEVEL,
           data: {
             required: requiredLevel,
             current: player.level
@@ -409,7 +409,7 @@ export const checkLevel = (requiredLevel: number) => {
       return res.status(500).json({
         success: false,
         message: '等级检查异常',
-        code: GAME_CONFIG.ERROR_CODES.INTERNAL_ERROR
+        code: GAME_CONSTANTS.ERROR_CODES.INTERNAL_ERROR
       });
     }
   };

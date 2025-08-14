@@ -109,7 +109,7 @@ export class OfflineMiningSession extends Model<OfflineMiningSessionAttributes, 
       const timeSinceLastCalculation = now.getTime() - this.last_calculation.getTime();
       
       // 计算可以进行的挖矿周期数
-      const cycleInterval = GAME_CONFIG.AUTO_MINING.MINING_INTERVAL;
+      const cycleInterval = GAME_CONFIG.AUTO_MINING.INTERVAL;
       const possibleCycles = Math.floor(timeSinceLastCalculation / cycleInterval);
       
       if (possibleCycles <= 0) {
@@ -600,7 +600,7 @@ export const OfflineMiningSessionModel = (sequelize: Sequelize) => {
         },
         
         beforeUpdate: (session: OfflineMiningSession) => {
-          session.updated_at = new Date();
+          session.setDataValue('updated_at', new Date());
           
           // 如果会话结束，计算总持续时间
           if (!session.is_active && !session.end_time) {

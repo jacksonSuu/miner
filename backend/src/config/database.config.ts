@@ -95,13 +95,23 @@ class DatabaseManager {
   }
 
   public getPoolStatus(): any {
-    const pool = this.sequelize.connectionManager.pool;
-    return {
-      size: pool?.size || 0,
-      available: pool?.available || 0,
-      using: pool?.using || 0,
-      waiting: pool?.waiting || 0
-    };
+    try {
+      const connectionManager = this.sequelize.connectionManager as any;
+      const pool = connectionManager.pool;
+      return {
+        size: pool?.size || 0,
+        available: pool?.available || 0,
+        using: pool?.using || 0,
+        waiting: pool?.waiting || 0
+      };
+    } catch (error) {
+      return {
+        size: 0,
+        available: 0,
+        using: 0,
+        waiting: 0
+      };
+    }
   }
 
   public async transaction(callback: (t: any) => Promise<any>): Promise<any> {

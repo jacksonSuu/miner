@@ -423,7 +423,7 @@ export const SceneModel = (sequelize: Sequelize) => {
         },
         
         beforeUpdate: (scene: Scene) => {
-          scene.updated_at = new Date();
+          scene.setDataValue('updated_at', new Date());
         },
         
         afterCreate: async (scene: Scene) => {

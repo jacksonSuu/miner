@@ -409,7 +409,7 @@ export const PlayerDataModel = (sequelize: Sequelize) => {
       ],
       hooks: {
         beforeUpdate: (playerData: PlayerData) => {
-          playerData.updated_at = new Date();
+          playerData.setDataValue('updated_at', new Date());
           
           // 确保精力不超过最大值
           if (playerData.current_energy > playerData.max_energy) {

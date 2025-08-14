@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { ShopController } from '../controllers/shop.controller';
 import { 
   requireAuth, 
-  shopApiRateLimit,
+  shopRateLimit,
   requestLogger
 } from '../middleware/auth.middleware';
 import { 
-  validateBody, 
-  validateQuery,
-  validateParams 
+  validateRequestBody,
+  validateQueryParams,
+  validatePathParams 
 } from '../middleware/error.middleware';
 
 const router = Router();
@@ -17,7 +17,7 @@ const router = Router();
 router.use(requestLogger);
 
 // 应用商店API速率限制
-router.use(shopApiRateLimit);
+router.use(shopRateLimit);
 
 // 所有商店路由都需要认证
 router.use(requireAuth);
@@ -199,21 +199,13 @@ router.use(requireAuth);
 
 // 获取商店物品列表
 router.get('/items', 
-  validateQuery({
-    category: { type: 'string', required: false, enum: ['tool', 'consumable', 'upgrade'] },
-    search: { type: 'string', required: false, maxLength: 50 },
-    page: { type: 'integer', required: false, minimum: 1 },
-    limit: { type: 'integer', required: false, minimum: 1, maximum: 50 }
-  }),
+  validateQueryParams([]),
   ShopController.getShopItems
 );
 
 // 购买商店物品
 router.post('/purchase', 
-  validateBody({
-    itemId: { type: 'integer', required: true, minimum: 1 },
-    quantity: { type: 'integer', required: true, minimum: 1, maximum: 99 }
-  }),
+  validateRequestBody(['itemId', 'quantity']),
   ShopController.purchaseItem
 );
 
@@ -222,27 +214,27 @@ router.get('/tools',
   ShopController.getPlayerTools
 );
 
-// 装备/卸下工具
+// 装备工具
 router.post('/tools/:toolId/equip', 
-  validateParams({
-    toolId: { type: 'integer', required: true, minimum: 1 }
-  }),
+  validatePathParams(['toolId']),
   ShopController.equipTool
+);
+
+// 卸下工具
+router.post('/tools/:toolId/unequip', 
+  validatePathParams(['toolId']),
+  ShopController.unequipTool
 );
 
 // 修理工具
 router.post('/tools/:toolId/repair', 
-  validateParams({
-    toolId: { type: 'integer', required: true, minimum: 1 }
-  }),
+  validatePathParams(['toolId']),
   ShopController.repairTool
 );
 
 // 出售工具
 router.post('/tools/:toolId/sell', 
-  validateParams({
-    toolId: { type: 'integer', required: true, minimum: 1 }
-  }),
+  validatePathParams(['toolId']),
   ShopController.sellTool
 );
 

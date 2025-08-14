@@ -289,7 +289,7 @@ export class GameController {
       return res.status(400).json({
         success: false,
         message: '场景ID必须是有效的整数',
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
 
@@ -303,7 +303,7 @@ export class GameController {
     } else {
       return res.status(400).json({
         ...result,
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
   });
@@ -380,7 +380,7 @@ export class GameController {
     } else {
       return res.status(400).json({
         ...result,
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
   });
@@ -524,7 +524,7 @@ export class GameController {
     } else {
       return res.status(400).json({
         ...result,
-        code: GAME_CONFIG.ERROR_CODES.INVALID_INPUT
+        code: GAME_CONSTANTS.ERROR_CODES.INVALID_INPUT
       });
     }
   });

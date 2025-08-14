@@ -307,7 +307,7 @@ export class AuthController {
     } else {
       return res.status(401).json({
         ...result,
-        code: GAME_CONFIG.ERROR_CODES.UNAUTHORIZED
+        code: GAME_CONSTANTS.ERROR_CODES.UNAUTHORIZED
       });
     }
   });

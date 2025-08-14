@@ -1,6 +1,6 @@
 import { PlayerData, Scene, MiningRecord, Tool, OfflineMiningSession } from '../models';
 import { GAME_CONFIG } from '../config/game.config';
-import { RedisClient } from '../config/redis.config';
+import { redisClient } from '../config/redis.config';
 import { Op } from 'sequelize';
 
 // 游戏服务接口
@@ -133,23 +133,11 @@ export class GameService {
       if (!scene.isAccessibleByPlayer(player.level)) {
         return {
           success: false,
-          message: `需要等级 ${scene.unlock_level} 才能进入此场景`
+          message: `需要等级 ${scene.required_level} 才能进入此场景`
         };
       }
 
-      // 检查挖矿冷却时间
-      const cooldownKey = `${this.MINING_COOLDOWN_KEY}${data.playerId}`;
-      const lastMiningTime = await RedisClient.get(cooldownKey);
-      if (lastMiningTime) {
-        const timeSinceLastMining = Date.now() - parseInt(lastMiningTime);
-        if (timeSinceLastMining < GAME_CONFIG.MINING.COOLDOWN_MS) {
-          const remainingCooldown = Math.ceil((GAME_CONFIG.MINING.COOLDOWN_MS - timeSinceLastMining) / 1000);
-          return {
-            success: false,
-            message: `挖矿冷却中，还需等待 ${remainingCooldown} 秒`
-          };
-        }
-      }
+      // 挖矿冷却功能已移除，允许连续挖矿
 
       // 自动恢复精力
       await player.autoRecoverEnergy();
@@ -164,11 +152,10 @@ export class GameService {
 
       // 获取玩家装备的工具
       const equippedTools = await Tool.getEquippedTools(data.playerId);
-      const toolBonus = Tool.calculateTotalBonus(equippedTools);
+      const toolBonus = await Tool.calculatePlayerBonus(data.playerId);
 
       // 计算挖矿奖励
-      const miningRewards = scene.calculateMiningRewards(player.level, toolBonus);
-      const droppedItems = scene.calculateItemDrops(player.level, toolBonus);
+      const miningRewards = scene.calculateMiningReward(player.level, true);
 
       // 消耗精力
       await player.consumeEnergy(scene.energy_cost);
@@ -184,17 +171,16 @@ export class GameService {
       await Tool.useEquippedTools(data.playerId);
 
       // 创建挖矿记录
-      const miningRecord = await MiningRecord.createRecord({
+      const miningRecord = await MiningRecord.createMiningRecord({
         playerId: data.playerId,
         sceneId: data.sceneId,
-        experience: miningRewards.experience,
-        coins: miningRewards.coins,
-        items: droppedItems,
-        energyCost: scene.energy_cost
+        experienceGained: miningRewards.experience,
+        coinsEarned: miningRewards.coins,
+        itemsFound: miningRewards.items || [],
+        energyConsumed: scene.energy_cost
       });
 
-      // 设置挖矿冷却
-      await RedisClient.set(cooldownKey, Date.now().toString(), GAME_CONFIG.MINING.COOLDOWN_MS / 1000);
+      // 挖矿冷却功能已移除
 
       // 重新加载玩家数据以获取最新状态
       await player.reload();
@@ -205,22 +191,17 @@ export class GameService {
         data: {
           experience: miningRewards.experience,
           coins: miningRewards.coins,
-          items: droppedItems.map(item => ({
-            name: item.name,
-            rarity: item.rarity,
-            value: item.value,
-            color: GAME_CONFIG.ITEM_RARITY[item.rarity as keyof typeof GAME_CONFIG.ITEM_RARITY]?.color || '#ffffff'
-          })),
+          items: [],
           energyCost: scene.energy_cost,
           remainingEnergy: player.current_energy,
-          levelUp: levelUpInfo ? {
-            newLevel: levelUpInfo.newLevel,
-            newMaxEnergy: levelUpInfo.newMaxEnergy
+          levelUp: levelUpInfo.leveledUp ? {
+            newLevel: levelUpInfo.newLevel!,
+            newMaxEnergy: player.max_energy
           } : undefined,
           record: {
             id: miningRecord.id,
-            totalValue: miningRecord.calculateTotalValue(),
-            efficiency: miningRecord.calculateEfficiency()
+            totalValue: miningRewards.coins,
+            efficiency: Math.round((miningRewards.coins + miningRewards.experience) / scene.energy_cost)
           }
         }
       };
@@ -247,21 +228,21 @@ export class GameService {
       await player.autoRecoverEnergy();
 
       // 获取挖矿统计
-      const miningStats = await MiningRecord.getPlayerMiningStats(playerId);
+      const miningStats: any = await MiningRecord.getPlayerMiningStats(playerId);
       
       // 获取工具信息
       const allTools = await Tool.getPlayerTools(playerId);
       const equippedTools = allTools.filter(tool => tool.is_equipped);
-      const toolBonus = Tool.calculateTotalBonus(equippedTools);
+      const toolBonus = await Tool.calculatePlayerBonus(playerId);
 
       // 计算精力恢复时间
       const energyToRecover = player.max_energy - player.current_energy;
-      const timeToFull = energyToRecover * GAME_CONFIG.ENERGY.RECOVERY_INTERVAL_MINUTES;
+      const timeToFull = energyToRecover * GAME_CONFIG.ENERGY.RECOVERY_INTERVAL;
 
       return {
         level: player.level,
         experience: player.experience,
-        experienceToNext: player.getExperienceToNextLevel(),
+        experienceToNext: GAME_CONFIG.LEVEL.getRequiredExp(player.level + 1) - player.experience,
         coins: player.coins,
         energy: {
           current: player.current_energy,
@@ -270,18 +251,18 @@ export class GameService {
           timeToFull
         },
         mining: {
-          totalMines: miningStats.totalMines,
-          totalValue: miningStats.totalValue,
-          averageEfficiency: miningStats.averageEfficiency,
-          bestRecord: miningStats.bestRecord
+          totalMines: miningStats?.totalMines || 0,
+          totalValue: miningStats?.totalValue || 0,
+          averageEfficiency: miningStats?.averageEfficiency || 0,
+          bestRecord: miningStats?.bestRecord || null
         },
         tools: {
           equipped: equippedTools.length,
           total: allTools.length,
           totalBonus: {
-            experience: toolBonus.experienceBonus,
-            coins: toolBonus.coinsBonus,
-            efficiency: toolBonus.efficiencyBonus
+            experience: toolBonus.expBonus,
+            coins: toolBonus.coinBonus,
+            efficiency: toolBonus.miningSpeed
           }
         }
       };
@@ -301,19 +282,19 @@ export class GameService {
         return [];
       }
 
-      const scenes = await Scene.getAllScenesWithUnlockStatus(player.level);
+      const scenes = await Scene.getAllScenesWithLockStatus(player.level);
       
-      return scenes.map(scene => ({
+      return scenes.map((scene: any) => ({
         id: scene.id,
         name: scene.name,
         description: scene.description,
-        unlockLevel: scene.unlock_level,
+        unlockLevel: scene.required_level,
         energyCost: scene.energy_cost,
         isUnlocked: scene.isUnlocked,
         rewards: {
           baseExperience: scene.base_experience,
-          baseCoins: scene.base_coins,
-          itemDropRate: scene.item_drop_rate
+          baseCoins: (scene.base_coins_min + scene.base_coins_max) / 2,
+          itemDropRate: 0.1
         }
       }));
     } catch (error) {
@@ -348,10 +329,10 @@ export class GameService {
       }
 
       // 检查离线挖矿解锁条件
-      if (!player.canUseOfflineMining()) {
+      if (!player.isAutoMiningUnlocked()) {
         return {
           success: false,
-          message: `需要等级 ${GAME_CONFIG.OFFLINE_MINING.UNLOCK_LEVEL} 才能使用离线挖矿`
+          message: `需要等级 ${GAME_CONFIG.AUTO_MINING.MIN_LEVEL_REQUIRED} 才能使用离线挖矿`
         };
       }
 
@@ -366,12 +347,12 @@ export class GameService {
       if (!scene.isAccessibleByPlayer(player.level)) {
         return {
           success: false,
-          message: `需要等级 ${scene.unlock_level} 才能在此场景离线挖矿`
+          message: `需要等级 ${scene.required_level} 才能在此场景离线挖矿`
         };
       }
 
       // 检查精力是否足够
-      const energyCost = GAME_CONFIG.OFFLINE_MINING.ENERGY_COST;
+      const energyCost = scene.energy_cost;
       if (!player.hasEnoughEnergy(energyCost)) {
         return {
           success: false,
@@ -381,7 +362,7 @@ export class GameService {
 
       // 消耗精力并开始离线挖矿
       await player.consumeEnergy(energyCost);
-      const session = await OfflineMiningSession.startSession(data.playerId, data.sceneId);
+      const session = await OfflineMiningSession.startSession({ playerId: data.playerId, sceneId: data.sceneId });
 
       return {
         success: true,
@@ -426,7 +407,7 @@ export class GameService {
       }
 
       // 计算并应用奖励
-      const rewards = await activeSession.calculateAndApplyRewards();
+      const rewards = await activeSession.applyOfflineRewards();
       
       // 停止会话
       await activeSession.stopSession();
@@ -437,14 +418,14 @@ export class GameService {
         rewards: {
           experience: rewards.experience,
           coins: rewards.coins,
-          items: rewards.items.map(item => ({
+          items: rewards.items.map((item: any) => ({
             name: item.name,
             rarity: item.rarity,
             value: item.value,
-            color: GAME_CONFIG.ITEM_RARITY[item.rarity as keyof typeof GAME_CONFIG.ITEM_RARITY]?.color || '#ffffff'
+            color: GAME_CONFIG.RARITY[item.rarity.toUpperCase() as keyof typeof GAME_CONFIG.RARITY]?.color || '#ffffff'
           })),
-          duration: activeSession.getDuration(),
-          efficiency: activeSession.calculateEfficiency()
+          duration: activeSession.getSessionDuration(),
+          efficiency: activeSession.getMiningEfficiency()
         }
       };
     } catch (error) {
@@ -473,8 +454,8 @@ export class GameService {
       
       if (activeSession) {
         const scene = await Scene.findByPk(activeSession.scene_id);
-        const duration = activeSession.getDuration();
-        const estimatedRewards = activeSession.calculateEstimatedRewards();
+        const duration = activeSession.getSessionDuration();
+        const estimatedRewards = await activeSession.calculateOfflineRewards();
 
         return {
           isActive: true,
@@ -484,22 +465,26 @@ export class GameService {
             sceneName: scene?.name || '未知场景',
             startTime: activeSession.start_time.toISOString(),
             duration,
-            estimatedRewards
+            estimatedRewards: {
+              experience: estimatedRewards.experience,
+              coins: estimatedRewards.coins,
+              items: estimatedRewards.items.length
+            }
           },
           canStart: false
         };
       }
 
       // 检查是否可以开始离线挖矿
-      const canStart = player.canUseOfflineMining() && 
-                      player.hasEnoughEnergy(GAME_CONFIG.OFFLINE_MINING.ENERGY_COST);
+      const canStart = player.isAutoMiningUnlocked() &&
+                       player.hasEnoughEnergy(1);
 
       return {
         isActive: false,
         canStart,
         requirements: {
-          minLevel: GAME_CONFIG.OFFLINE_MINING.UNLOCK_LEVEL,
-          energyCost: GAME_CONFIG.OFFLINE_MINING.ENERGY_COST
+          minLevel: GAME_CONFIG.AUTO_MINING.MIN_LEVEL_REQUIRED,
+          energyCost: 1
         }
       };
     } catch (error) {
@@ -559,7 +544,7 @@ export class GameService {
     averageEfficiency: number;
   }>> {
     try {
-      return await MiningRecord.getGlobalMiningLeaderboard(limit);
+      return await MiningRecord.getGlobalMiningLeaderboard('coins', 'weekly', limit);
     } catch (error) {
       console.error('获取挖矿排行榜失败:', error);
       return [];
@@ -592,16 +577,19 @@ export class GameService {
     };
   }> {
     try {
-      const { records, total } = await MiningRecord.getPlayerMiningRecords(playerId, page, limit);
+      const { records, total } = await MiningRecord.getPlayerMiningRecords(playerId, {
+        limit,
+        offset: (page - 1) * limit
+      });
       
       const formattedRecords = records.map(record => ({
         id: record.id,
-        sceneName: record.Scene?.name || '未知场景',
-        experience: record.experience,
-        coins: record.coins,
-        items: record.getItems(),
-        totalValue: record.calculateTotalValue(),
-        efficiency: record.calculateEfficiency(),
+        sceneName: record.scene?.name || '未知场景',
+        experience: record.experience_gained,
+        coins: record.coins_earned,
+        items: record.getItemsFound(),
+        totalValue: record.getTotalValue(),
+        efficiency: record.getMiningEfficiency(),
         timestamp: record.created_at.toISOString()
       }));
 

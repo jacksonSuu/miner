@@ -482,7 +482,7 @@ export const ToolModel = (sequelize: Sequelize) => {
       ],
       hooks: {
         beforeUpdate: (tool: Tool) => {
-          tool.updated_at = new Date();
+          tool.setDataValue('updated_at', new Date());
           
           // 确保耐久度不超过最大值
           if (tool.durability > tool.max_durability) {

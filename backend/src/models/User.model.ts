@@ -1,4 +1,4 @@
-import { DataTypes, Model, Sequelize, Optional } from 'sequelize';
+import { DataTypes, Model, Sequelize, Optional, Op } from 'sequelize';
 import bcrypt from 'bcrypt';
 import { GAME_CONFIG } from '../config/game.config';
 
@@ -60,7 +60,7 @@ export class User extends Model<UserAttributes, UserCreationAttributes> implemen
     try {
       return await User.findOne({
         where: {
-          [Sequelize.Op.or]: [
+          [Op.or]: [
             { username: identifier },
             { email: identifier }
           ]
@@ -205,7 +205,7 @@ export const UserModel = (sequelize: Sequelize) => {
       hooks: {
         // 更新时自动更新 updated_at
         beforeUpdate: (user: User) => {
-          user.updated_at = new Date();
+          user.setDataValue('updated_at', new Date());
         },
         
         // 创建后的钩子（可以用于创建关联的玩家数据）
